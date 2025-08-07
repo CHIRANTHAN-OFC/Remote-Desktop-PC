@@ -1,200 +1,126 @@
-name: 🖥️ REMOTE DESKTOP PC
+name: 🎮 FREE FIRE RIPPER
 
 on:
   workflow_dispatch:
     inputs:
       code:
-        description: "🔑 Paste Chrome Remote Desktop Code (12 digits)"
+        description: "📋 Paste Chrome Remote Desktop Code"
         required: true
 
 jobs:
-  remote_desktop:
-    name: 🚀 Remote Desktop PC Setup
+  build:
+    name: "🔥 Free Fire Ripper Lab Running"
     runs-on: windows-latest
-    timeout-minutes: 43800 # 30 days
+    timeout-minutes: 43800  # 30 days
 
     steps:
-    - name: 🔒 Disable Security Protections
+    # 🔒 Disable Firewall
+    - name: "🛡️ Disable Windows Firewall"
       run: |
-        Write-Host "🛡️ Disabling firewall profiles..."
         try {
           Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
-          Write-Host "✅ Firewall disabled successfully"
+          Write-Host "✅ Firewall disabled successfully!"
         } catch {
-          Write-Warning "⚠️ Failed to disable firewall - continuing..."
+          Write-Host "⚠️ Failed to disable firewall. Continuing anyway..."
         }
 
-    - name: 📦 Install Required Software
+    # 📦 Install Required Packages
+    - name: "📥 Install Chrome Remote Desktop & Chrome"
       run: |
-        function Install-Software {
+        function Install-PackageWithRetry {
             param ([string]$packageName)
             $maxRetries = 3
             $retryCount = 0
-            
             while ($retryCount -lt $maxRetries) {
                 try {
-                    Write-Host "🔧 Installing $packageName..."
                     choco install $packageName -y --ignore-checksums
-                    Write-Host "✔️ $packageName installed"
+                    Write-Host "✅ $packageName installed successfully!"
                     return
                 } catch {
-                    $retryCount++
-                    Write-Warning "🔄 Retrying $packageName ($retryCount/$maxRetries)"
+                    Write-Host "🔄 Retrying $packageName install ($($retryCount+1)/$maxRetries)"
                     Start-Sleep -Seconds 10
+                    $retryCount++
                 }
             }
-            throw "❌ Failed to install $packageName after $maxRetries attempts"
+            Write-Host "❌ Failed to install $packageName after $maxRetries attempts"
         }
+        
+        # Install packages
+        Install-PackageWithRetry -packageName "chrome-remote-desktop-host"
+        Install-PackageWithRetry -packageName "googlechrome"
+        Install-PackageWithRetry -packageName "7zip"
 
-        Install-Software -packageName "chrome-remote-desktop-host"
-        Install-Software -packageName "googlechrome"
-
-    - name: ⬇️ Download Tools Package
+    # ⬇️ Download Free Fire Ripper Package
+    - name: "📦 Download Free Fire Tools"
       continue-on-error: true
       run: |
-        Write-Host "📥 Downloading software package..."
-        $targetDir = "C:\Users\$Env:USERNAME\Documents\RemoteDesktopTools"
-        $downloadUrl = "https://drive.usercontent.google.com/download?id=11EUFz6hufNT1g56-CmOJw9_KxMERZxhe&export=download"
-        $tempFile = "$targetDir\remote_tools.zip"
-        
+        $downloadPath = "C:\Users\$Env:USERNAME\Documents\ffripper.zip"
+        Write-Host "🔽 Downloading Free Fire Ripper package..."
         try {
-          # Create target directory if it doesn't exist
-          if (-not (Test-Path $targetDir)) {
-              New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
-          }
-          
-          # Alternative download method with better error handling
-          $ProgressPreference = 'SilentlyContinue'
-          $retryCount = 0
-          $maxRetries = 3
-          
-          while ($retryCount -lt $maxRetries) {
-              try {
-                  Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing
-                  break
-              } catch {
-                  $retryCount++
-                  if ($retryCount -ge $maxRetries) {
-                      throw "❌ Download failed after $maxRetries attempts: $_"
-                  }
-                  Write-Warning "⚠️ Download attempt $retryCount failed. Retrying in 10 seconds..."
-                  Start-Sleep -Seconds 10
+          Invoke-WebRequest -Uri "https://drive.usercontent.google.com/download?id=11EUFz6hufNT1g56-CmOJw9_KxMERZxhe&export=download" -OutFile $downloadPath
+          Write-Host "✅ Download completed!"
+        } catch {
+          Write-Host "❌ Download failed: $_"
+          exit 1
+        }
+
+    # 📂 Extract Files
+    - name: "🗂️ Extract Free Fire Tools"
+      continue-on-error: true
+      run: |
+        cd C:\Users\$Env:USERNAME\Documents
+        Write-Host "🔍 Extracting files..."
+        try {
+          7z x ffripper.zip -y -o"C:\Users\$Env:USERNAME\Documents\FreeFireRipper"
+          Write-Host "✅ Extraction completed!"
+        } catch {
+          Write-Host "❌ Extraction failed: $_"
+        }
+
+    # 🖥️ Setup Chrome Remote Desktop
+    - name: "🚀 Start Chrome Remote Desktop"
+      run: |
+        function Start-RemoteDesktop {
+          $paths = @(
+            "${Env:PROGRAMFILES(X86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe",
+            "${Env:PROGRAMFILES}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+          )
+          foreach ($path in $paths) {
+              if (Test-Path $path) {
+                Write-Host "🔌 Starting Chrome Remote Desktop from $path"
+                & $path
+                return
               }
           }
-          
-          Write-Host "📦 Extracting package..."
-          if (Test-Path $tempFile) {
-              7z x $tempFile -o"$targetDir" -y -bso0
-              Write-Host "✅ Extraction complete"
-          } else {
-              throw "❌ Downloaded file not found"
-          }
-        } catch {
-          Write-Warning "⚠️ Package download/extraction failed. Some features may not work."
-          Write-Host "Continuing with setup..."
+          Write-Host "❌ Chrome Remote Desktop executable not found!"
         }
+        Start-RemoteDesktop
 
-    - name: 🌐 Start Remote Desktop Service
+    # 🔗 Create Desktop Shortcuts
+    - name: "📌 Create Desktop Shortcuts"
+      run: |
+        Write-Host "📝 Creating shortcuts..."
+        New-Item -ItemType SymbolicLink -Target "C:\Users\$Env:USERNAME\Documents\FenixGaga\Engine\ProjectTitan.exe" -Path "C:\Users\$Env:USERNAME\Desktop\Free Fire.lnk"
+        New-Item -ItemType SymbolicLink -Target "C:\Users\$Env:USERNAME\Documents\ninjaripper\x86\NinjaRipper.exe" -Path "C:\Users\$Env:USERNAME\Desktop\Ninjaripper.lnk"
+        New-Item -ItemType SymbolicLink -Target "C:\Users\$Env:USERNAME\Documents\noesis\Noesis64.exe" -Path "C:\Users\$Env:USERNAME\Desktop\Noesis.lnk"
+        Write-Host "✅ Shortcuts created successfully!"
+
+    # 🔄 Establish Connection
+    - name: "🔗 Connect Remote Desktop"
       continue-on-error: true
       run: |
-        Write-Host "🚀 Starting Chrome Remote Desktop..."
-        $crdPaths = @(
-            "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe",
-            "${Env:ProgramFiles}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
-        )
-        
-        $serviceStarted = $false
-        foreach ($path in $crdPaths) {
-            if (Test-Path $path) {
-                try {
-                    Start-Process -FilePath $path -WindowStyle Hidden
-                    Write-Host "✔️ Service started from $path"
-                    $serviceStarted = $true
-                    break
-                } catch {
-                    Write-Warning "⚠️ Failed to start service from $path"
-                }
-            }
-        }
-        
-        if (-not $serviceStarted) {
-            Write-Warning "⚠️ Chrome Remote Desktop executable not found or failed to start"
-        }
+        Write-Host "🖥️ Connecting to VM with Remote Desktop..."
+        ${{ inputs.code }} --pin=123456
+        Write-Host "✅ Connection established!"
 
-    - name: 📌 Create Desktop Shortcuts
+    # ⏳ Keep Session Alive
+    - name: "⏳ Maintain Connection (30 days)"
       run: |
-        Write-Host "📝 Creating desktop shortcuts..."
-        $desktop = [Environment]::GetFolderPath("Desktop")
-        
-        @(
-            @{
-                Target = "C:\Users\$Env:USERNAME\Documents\FenixGaga\Engine\ProjectTitan.exe"
-                Link = "$desktop\Free Fire.lnk"
-            },
-            @{
-                Target = "C:\Users\$Env:USERNAME\Documents\ninjaripper\x86\NinjaRipper.exe"
-                Link = "$desktop\Ninjaripper.lnk"
-            },
-            @{
-                Target = "C:\Users\$Env:USERNAME\Documents\noesis\Noesis64.exe"
-                Link = "$desktop\Noesis.lnk"
-            }
-        ) | ForEach-Object {
-            if (Test-Path $_.Target) {
-                try {
-                    New-Item -ItemType SymbolicLink -Path $_.Link -Target $_.Target -Force
-                    Write-Host "✔️ Created shortcut: $($_.Link)"
-                } catch {
-                    Write-Warning "⚠️ Failed to create shortcut: $($_.Link)"
-                }
-            } else {
-                Write-Warning "⚠️ Target not found: $($_.Target)"
-            }
-        }
-
-    - name: 🔗 Establish Remote Connection
-      continue-on-error: true
-      run: |
-        Write-Host "🌍 Connecting to remote desktop..."
-        $connectionCode = "${{ inputs.code }}"
-        
-        # Validate code format
-        if (-not ($connectionCode -match '^\d{12}$')) {
-            Write-Warning "⚠️ Invalid connection code format - must be 12 digits"
-            exit 0
-        }
-        
-        # Find Chrome Remote Desktop executable
-        $crdPaths = @(
-            "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\chrome-remote-desktop-host.exe",
-            "${Env:ProgramFiles}\Google\Chrome Remote Desktop\CurrentVersion\chrome-remote-desktop-host.exe"
-        )
-        
-        foreach ($path in $crdPaths) {
-            if (Test-Path $path) {
-                try {
-                    Write-Host "🔐 Using connection code: $connectionCode"
-                    Start-Process -FilePath $path -ArgumentList "--code=$connectionCode --pin=123456" -WindowStyle Hidden
-                    Write-Host "✅ Connection initiated successfully"
-                    exit 0
-                } catch {
-                    Write-Warning "⚠️ Failed to start connection process: $_"
-                }
-            }
-        }
-        
-        Write-Warning "⚠️ Chrome Remote Desktop host executable not found"
-
-    - name: ⏳ Maintain Active Session
-      run: |
-        Write-Host "⏰ Session will remain active for 30 days"
-        $totalMinutes = 43800
-        $startTime = Get-Date
-        
-        for ($i = $totalMinutes; $i -gt 0; $i--) {
-            $elapsed = (Get-Date) - $startTime
-            Write-Host "🟢 Session active | Time remaining: $($i) minutes | Elapsed: $($elapsed.ToString('dd\.hh\:mm'))"
-            Start-Sleep -Seconds 60
-        }
-        
-        Write-Host "🛑 Session timeout reached"
+        Write-Host "⏰ Session will remain active for 30 days..."
+        $i = 43800  # 30 days in minutes
+        do {
+            Write-Host "⏱️ Time remaining: $i minutes"
+            Start-Sleep 60
+            $i--
+        } while ($i -gt 0)
+        Write-Host "⌛ Session timeout reached"
