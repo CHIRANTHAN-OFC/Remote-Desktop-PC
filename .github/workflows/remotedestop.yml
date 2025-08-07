@@ -54,21 +54,44 @@ jobs:
       run: |
         Write-Host "📥 Downloading software package..."
         $targetDir = "C:\Users\$Env:USERNAME\Documents\RemoteDesktopTools"
+        $downloadUrl = "https://drive.usercontent.google.com/download?id=11EUFz6hufNT1g56-CmOJw9_KxMERZxhe&export=download"
+        $tempFile = "$targetDir\remote_tools.zip"
         
         try {
+          # Create target directory if it doesn't exist
           if (-not (Test-Path $targetDir)) {
-              New-Item -ItemType Directory -Path $targetDir -Force
+              New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
           }
           
-          Invoke-WebRequest -Uri "https://drive.usercontent.google.com/download?id=11EUFz6hufNT1g56-CmOJw9_KxMERZxhe&export=download" `
-              -OutFile "$targetDir\remote_tools.zip"
+          # Alternative download method with better error handling
+          $ProgressPreference = 'SilentlyContinue'
+          $retryCount = 0
+          $maxRetries = 3
+          
+          while ($retryCount -lt $maxRetries) {
+              try {
+                  Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing
+                  break
+              } catch {
+                  $retryCount++
+                  if ($retryCount -ge $maxRetries) {
+                      throw "❌ Download failed after $maxRetries attempts: $_"
+                  }
+                  Write-Warning "⚠️ Download attempt $retryCount failed. Retrying in 10 seconds..."
+                  Start-Sleep -Seconds 10
+              }
+          }
           
           Write-Host "📦 Extracting package..."
-          7z x "$targetDir\remote_tools.zip" -o"$targetDir" -y
-          Write-Host "✅ Extraction complete"
+          if (Test-Path $tempFile) {
+              7z x $tempFile -o"$targetDir" -y -bso0
+              Write-Host "✅ Extraction complete"
+          } else {
+              throw "❌ Downloaded file not found"
+          }
         } catch {
-          Write-Error "❌ Download failed: $_"
-          exit 1
+          Write-Warning "⚠️ Package download/extraction failed. Some features may not work."
+          Write-Host "Continuing with setup..."
         }
 
     - name: 🌐 Start Remote Desktop Service
@@ -76,18 +99,27 @@ jobs:
       run: |
         Write-Host "🚀 Starting Chrome Remote Desktop..."
         $crdPaths = @(
-            "${Env:PROGRAMFILES(X86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe",
-            "${Env:PROGRAMFILES}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+            "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe",
+            "${Env:ProgramFiles}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
         )
         
+        $serviceStarted = $false
         foreach ($path in $crdPaths) {
             if (Test-Path $path) {
-                & $path
-                Write-Host "✔️ Service started from $path"
-                return
+                try {
+                    Start-Process -FilePath $path -WindowStyle Hidden
+                    Write-Host "✔️ Service started from $path"
+                    $serviceStarted = $true
+                    break
+                } catch {
+                    Write-Warning "⚠️ Failed to start service from $path"
+                }
             }
         }
-        Write-Warning "⚠️ Chrome Remote Desktop executable not found"
+        
+        if (-not $serviceStarted) {
+            Write-Warning "⚠️ Chrome Remote Desktop executable not found or failed to start"
+        }
 
     - name: 📌 Create Desktop Shortcuts
       run: |
@@ -109,8 +141,12 @@ jobs:
             }
         ) | ForEach-Object {
             if (Test-Path $_.Target) {
-                New-Item -ItemType SymbolicLink -Path $_.Link -Target $_.Target -Force
-                Write-Host "✔️ Created shortcut: $($_.Link)"
+                try {
+                    New-Item -ItemType SymbolicLink -Path $_.Link -Target $_.Target -Force
+                    Write-Host "✔️ Created shortcut: $($_.Link)"
+                } catch {
+                    Write-Warning "⚠️ Failed to create shortcut: $($_.Link)"
+                }
             } else {
                 Write-Warning "⚠️ Target not found: $($_.Target)"
             }
@@ -122,12 +158,32 @@ jobs:
         Write-Host "🌍 Connecting to remote desktop..."
         $connectionCode = "${{ inputs.code }}"
         
-        if ($connectionCode -match '^\d{12}$') {
-            Write-Host "🔐 Using connection code: $connectionCode"
-            Start-Process "chrome-remote-desktop-host" -ArgumentList "--code=$connectionCode --pin=123456"
-        } else {
-            Write-Error "❌ Invalid connection code format"
+        # Validate code format
+        if (-not ($connectionCode -match '^\d{12}$')) {
+            Write-Warning "⚠️ Invalid connection code format - must be 12 digits"
+            exit 0
         }
+        
+        # Find Chrome Remote Desktop executable
+        $crdPaths = @(
+            "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\chrome-remote-desktop-host.exe",
+            "${Env:ProgramFiles}\Google\Chrome Remote Desktop\CurrentVersion\chrome-remote-desktop-host.exe"
+        )
+        
+        foreach ($path in $crdPaths) {
+            if (Test-Path $path) {
+                try {
+                    Write-Host "🔐 Using connection code: $connectionCode"
+                    Start-Process -FilePath $path -ArgumentList "--code=$connectionCode --pin=123456" -WindowStyle Hidden
+                    Write-Host "✅ Connection initiated successfully"
+                    exit 0
+                } catch {
+                    Write-Warning "⚠️ Failed to start connection process: $_"
+                }
+            }
+        }
+        
+        Write-Warning "⚠️ Chrome Remote Desktop host executable not found"
 
     - name: ⏳ Maintain Active Session
       run: |
