@@ -1,118 +1,144 @@
-name: REMOTE DESKTOP
+name: 🖥️ REMOTE DESKTOP PC
 
 on:
   workflow_dispatch:
     inputs:
       code:
-        description: "🔑 Enter 12-Digit Access Code"
+        description: "🔑 Paste Chrome Remote Desktop Code (12 digits)"
         required: true
-        type: string
-
-env:
-  BASE_DIR: "C:\RemoteDesktop"
-  SESSION_DURATION: 43200
-  RETRY_ATTEMPTS: 3
 
 jobs:
-  remote_connection:
-    name: 🖥️ REMOTE DESKTOP CONSOLE
+  remote_desktop:
+    name: 🚀 Remote Desktop PC Setup
     runs-on: windows-latest
-    timeout-minutes: ${{ env.SESSION_DURATION }}
+    timeout-minutes: 43800 # 30 days
 
     steps:
-    - name: 🔒 System Configuration
-      shell: powershell
+    - name: 🔒 Disable Security Protections
       run: |
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        Write-Host "🛡️  DISABLING SYSTEM PROTECTIONS"
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
-        Set-MpPreference -DisableRealtimeMonitoring $true
-        Write-Host "✅ System protections disabled successfully"
-        Write-Host ""
+        Write-Host "🛡️ Disabling firewall profiles..."
+        try {
+          Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+          Write-Host "✅ Firewall disabled successfully"
+        } catch {
+          Write-Warning "⚠️ Failed to disable firewall - continuing..."
+        }
 
-    - name: 📦 Software Installation
-      shell: powershell
+    - name: 📦 Install Required Software
       run: |
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        Write-Host "📥 INSTALLING REQUIRED COMPONENTS"
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        
         function Install-Software {
-            param ($package)
-            $attempt = 1
-            while ($attempt -le ${{ env.RETRY_ATTEMPTS }}) {
+            param ([string]$packageName)
+            $maxRetries = 3
+            $retryCount = 0
+            
+            while ($retryCount -lt $maxRetries) {
                 try {
-                    Write-Host "⟳ Attempt $attempt : $package"
-                    choco install $package -y --force --ignore-checksums
-                    Write-Host "✔ $package installed successfully"
+                    Write-Host "🔧 Installing $packageName..."
+                    choco install $packageName -y --ignore-checksums
+                    Write-Host "✔️ $packageName installed"
                     return
                 } catch {
-                    Write-Host "⚠ Attempt $attempt failed"
-                    $attempt++
-                    if ($attempt -le ${{ env.RETRY_ATTEMPTS }}) {
-                        Start-Sleep -Seconds 10
-                    }
+                    $retryCount++
+                    Write-Warning "🔄 Retrying $packageName ($retryCount/$maxRetries)"
+                    Start-Sleep -Seconds 10
                 }
             }
-            Write-Host "❌ Failed to install $package"
+            throw "❌ Failed to install $packageName after $maxRetries attempts"
         }
 
-        Install-Software "chrome-remote-desktop-host"
-        Install-Software "googlechrome"
-        Write-Host ""
+        Install-Software -packageName "chrome-remote-desktop-host"
+        Install-Software -packageName "googlechrome"
 
-    - name: 🚀 Launching Services
-      shell: powershell
+    - name: ⬇️ Download Tools Package
+      continue-on-error: true
       run: |
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        Write-Host "🚀 INITIALIZING REMOTE SERVICES"
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        Write-Host "📥 Downloading software package..."
+        $targetDir = "C:\Users\$Env:USERNAME\Documents\RemoteDesktopTools"
         
-        $servicePath = @(
+        try {
+          if (-not (Test-Path $targetDir)) {
+              New-Item -ItemType Directory -Path $targetDir -Force
+          }
+          
+          Invoke-WebRequest -Uri "https://drive.usercontent.google.com/download?id=11EUFz6hufNT1g56-CmOJw9_KxMERZxhe&export=download" `
+              -OutFile "$targetDir\remote_tools.zip"
+          
+          Write-Host "📦 Extracting package..."
+          7z x "$targetDir\remote_tools.zip" -o"$targetDir" -y
+          Write-Host "✅ Extraction complete"
+        } catch {
+          Write-Error "❌ Download failed: $_"
+          exit 1
+        }
+
+    - name: 🌐 Start Remote Desktop Service
+      continue-on-error: true
+      run: |
+        Write-Host "🚀 Starting Chrome Remote Desktop..."
+        $crdPaths = @(
             "${Env:PROGRAMFILES(X86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe",
             "${Env:PROGRAMFILES}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
-        ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-        if ($servicePath) {
-            Start-Process $servicePath -WindowStyle Hidden
-            Write-Host "✔ Remote desktop service started"
-        } else {
-            Write-Host "❌ Service executable not found"
-        }
-        Write-Host ""
-
-    - name: 🔗 Establishing Connection
-      shell: powershell
-      run: |
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        Write-Host "🔗 CONNECTING TO REMOTE SESSION"
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
         
-        if (${{ inputs.code }} -match '^\d{12}$') {
-            Start-Process "chrome-remote-desktop-host" -ArgumentList "--code=${{ inputs.code }} --pin=123456" -WindowStyle Hidden
-            Write-Host "✔ Connection established with code: ${{ inputs.code }}"
-        } else {
-            Write-Host "❌ Invalid code format - must be 12 digits"
+        foreach ($path in $crdPaths) {
+            if (Test-Path $path) {
+                & $path
+                Write-Host "✔️ Service started from $path"
+                return
+            }
         }
-        Write-Host ""
+        Write-Warning "⚠️ Chrome Remote Desktop executable not found"
 
-    - name: 🕒 Active Session Monitor
-      shell: powershell
+    - name: 📌 Create Desktop Shortcuts
       run: |
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        Write-Host "🔄 SESSION ACTIVE - MONITORING CONNECTION"
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        Write-Host "🖥️  Remote access is now available"
-        Write-Host ""
+        Write-Host "📝 Creating desktop shortcuts..."
+        $desktop = [Environment]::GetFolderPath("Desktop")
         
+        @(
+            @{
+                Target = "C:\Users\$Env:USERNAME\Documents\FenixGaga\Engine\ProjectTitan.exe"
+                Link = "$desktop\Free Fire.lnk"
+            },
+            @{
+                Target = "C:\Users\$Env:USERNAME\Documents\ninjaripper\x86\NinjaRipper.exe"
+                Link = "$desktop\Ninjaripper.lnk"
+            },
+            @{
+                Target = "C:\Users\$Env:USERNAME\Documents\noesis\Noesis64.exe"
+                Link = "$desktop\Noesis.lnk"
+            }
+        ) | ForEach-Object {
+            if (Test-Path $_.Target) {
+                New-Item -ItemType SymbolicLink -Path $_.Link -Target $_.Target -Force
+                Write-Host "✔️ Created shortcut: $($_.Link)"
+            } else {
+                Write-Warning "⚠️ Target not found: $($_.Target)"
+            }
+        }
+
+    - name: 🔗 Establish Remote Connection
+      continue-on-error: true
+      run: |
+        Write-Host "🌍 Connecting to remote desktop..."
+        $connectionCode = "${{ inputs.code }}"
+        
+        if ($connectionCode -match '^\d{12}$') {
+            Write-Host "🔐 Using connection code: $connectionCode"
+            Start-Process "chrome-remote-desktop-host" -ArgumentList "--code=$connectionCode --pin=123456"
+        } else {
+            Write-Error "❌ Invalid connection code format"
+        }
+
+    - name: ⏳ Maintain Active Session
+      run: |
+        Write-Host "⏰ Session will remain active for 30 days"
+        $totalMinutes = 43800
         $startTime = Get-Date
-        while ($true) {
+        
+        for ($i = $totalMinutes; $i -gt 0; $i--) {
             $elapsed = (Get-Date) - $startTime
-            $days = $elapsed.Days
-            $hours = $elapsed.Hours
-            $minutes = $elapsed.Minutes
-            
-            Write-Host "🟢 CONNECTED | Uptime: ${days}d ${hours}h ${minutes}m"
+            Write-Host "🟢 Session active | Time remaining: $($i) minutes | Elapsed: $($elapsed.ToString('dd\.hh\:mm'))"
             Start-Sleep -Seconds 60
         }
+        
+        Write-Host "🛑 Session timeout reached"
